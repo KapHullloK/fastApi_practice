@@ -1,8 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
-from fastapi_cache.decorator import cache
 
-from app.api.cache import api_cache_key_builder
-from app.api.dependencies import SessionDep
+from app.cache import api_cache_key_builder, cache_until_reset
+from app.api.dependencies import TradingRepositoryDep
 from app.api.trading.schemas import (
     LastTradingDatesResponse,
     TradingDynamicsRequest,
@@ -10,12 +9,6 @@ from app.api.trading.schemas import (
     TradingFiltersRequest,
     TradingResultItem,
     TradingResultsResponse,
-)
-from app.config.settings import settings
-from app.db.crud import (
-    get_dynamics as get_dynamics_crud,
-    get_last_trading_dates as get_last_trading_dates_crud,
-    get_trading_results as get_trading_results_crud,
 )
 
 router = APIRouter(
@@ -29,12 +22,12 @@ router = APIRouter(
     response_model=LastTradingDatesResponse,
     description="Returns last unique trading dates filtered by count",
 )
-@cache(expire=settings.cache.default_ttl_seconds, key_builder=api_cache_key_builder)
+@cache_until_reset(key_builder=api_cache_key_builder)
 async def get_last_trading_dates(
-    session: SessionDep,
+    trading_rep: TradingRepositoryDep,
     limit: int = Query(5, ge=1, le=365, description="Number of last trading dates"),
 ) -> LastTradingDatesResponse:
-    dates = await get_last_trading_dates_crud(session=session, limit=limit)
+    dates = await trading_rep.get_last_trading_dates(limit=limit)
     return LastTradingDatesResponse(dates=dates)
 
 
@@ -43,13 +36,12 @@ async def get_last_trading_dates(
     response_model=TradingResultsResponse,
     description="Returns latest trading results with optional filters",
 )
-@cache(expire=settings.cache.default_ttl_seconds, key_builder=api_cache_key_builder)
-async def get_trading_results(
+@cache_until_reset(key_builder=api_cache_key_builder)
+async def get_trading_repesults(
     payload: TradingFiltersRequest,
-    session: SessionDep,
+    trading_rep: TradingRepositoryDep,
 ) -> TradingResultsResponse:
-    rows = await get_trading_results_crud(
-        session=session,
+    rows = await trading_rep.get_trading_repesults(
         oil_id=payload.oil_id,
         delivery_type_id=payload.delivery_type_id,
         delivery_basis_id=payload.delivery_basis_id,
@@ -79,16 +71,15 @@ async def get_trading_results(
     response_model=TradingDynamicsResponse,
     description="Returns trading dynamics for selected period and filters",
 )
-@cache(expire=settings.cache.default_ttl_seconds, key_builder=api_cache_key_builder)
+@cache_until_reset(key_builder=api_cache_key_builder)
 async def get_dynamics(
     payload: TradingDynamicsRequest,
-    session: SessionDep,
+    trading_rep: TradingRepositoryDep,
 ) -> TradingDynamicsResponse:
     if payload.start_date > payload.end_date:
         raise HTTPException(status_code=400, detail="start_date must be less than or equal to end_date")
 
-    rows = await get_dynamics_crud(
-        session=session,
+    rows = await trading_rep.get_dynamics(
         start_date=payload.start_date,
         end_date=payload.end_date,
         oil_id=payload.oil_id,

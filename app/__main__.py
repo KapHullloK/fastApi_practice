@@ -1,25 +1,21 @@
 from contextlib import asynccontextmanager
-from datetime import datetime, time
 
 import uvicorn
-from fastapi import FastAPI, Request
-from fastapi_cache import FastAPICache
-from fastapi_cache.backends.redis import RedisBackend
-from redis import asyncio as aioredis
+from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api import routers
+from app.context import build_app_context
 from app.config.settings import settings
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
-    redis = aioredis.from_url(settings.redis.dsn, encoding="utf-8", decode_responses=False)
-    FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
+async def lifespan(app: FastAPI):
+    app.state.context = build_app_context()
     try:
         yield
     finally:
-        await redis.close()
+        await app.state.context.cache_manager.close()
 
 
 def create_app() -> FastAPI:
@@ -31,7 +27,6 @@ def create_app() -> FastAPI:
         redoc_url=f"{prefix}/redoc",
         lifespan=lifespan,
     )
-    app.state.cache_last_reset_date = None
 
     app.add_middleware(
         CORSMiddleware,
@@ -40,17 +35,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    @app.middleware("http")
-    async def reset_cache(request: Request, call_next):
-        now = datetime.now()
-        reset_time = time(settings.cache.reset_hour, settings.cache.reset_minute)
-
-        if now.time() >= reset_time and app.state.cache_last_reset_date != now.date():
-            await FastAPICache.clear()
-            app.state.cache_last_reset_date = now.date()
-
-        return await call_next(request)
 
     for router in routers:
         app.include_router(router, prefix=prefix)

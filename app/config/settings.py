@@ -59,6 +59,7 @@ class RedisConfig(BaseConfig):
 
 
 class CacheConfig(BaseConfig):
+    prefix: str = Field(alias="CACHE_PREFIX", default="fastapi-cache")
     default_ttl_seconds: int = Field(alias="CACHE_EXPIRE_SECONDS", default=172800)
     reset_hour: int = Field(alias="CACHE_RESET_HOUR", default=14)
     reset_minute: int = Field(alias="CACHE_RESET_MINUTE", default=11)
